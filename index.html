@@ -44,7 +44,7 @@ section{margin-top:34px}
 .qty button{width:40px;height:40px;border-radius:50%;border:2px solid var(--ink);background:transparent;color:var(--ink);font-size:22px;line-height:1;cursor:pointer}
 .qty output{min-width:1.5ch;text-align:center;font-weight:700}
 label{display:block;font-weight:600;margin:16px 0 6px}
-input[type=text],input[type=tel],textarea{width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:inherit}
+input[type=text],input[type=tel],input[type=email],textarea{width:100%;padding:12px 14px;border:2px solid var(--line);border-radius:10px;background:var(--card);color:var(--ink);font:inherit}
 textarea{min-height:84px;resize:vertical}
 fieldset{border:0;padding:0;margin:16px 0 0}
 legend{font-weight:600;padding:0;margin-bottom:6px}
@@ -53,7 +53,8 @@ legend{font-weight:600;padding:0;margin-bottom:6px}
 :focus-visible{outline:3px solid var(--btn);outline-offset:2px}
 .total{display:flex;justify-content:space-between;align-items:baseline;margin-top:26px;font-size:20px}
 .total strong{font-family:"Bricolage Grotesque",system-ui,sans-serif;font-size:32px}
-.go{display:block;text-align:center;margin-top:14px;padding:16px;border-radius:12px;background:var(--btn);color:var(--btn-ink);font-weight:700;font-size:18px;text-decoration:none}
+.go{display:block;text-align:center;margin-top:14px;padding:16px;border-radius:12px;background:var(--btn);color:var(--btn-ink);font-weight:700;font-size:18px;text-decoration:none;width:100%;border:0;cursor:pointer;font-family:inherit}
+.go[disabled]{opacity:.6;cursor:default}
 .msg{margin:12px 0 0;font-size:15.5px;min-height:1.5em}
 .err{color:var(--btn)}
 .how{color:var(--muted);font-size:15.5px;padding-left:20px}
@@ -76,16 +77,20 @@ footer{margin-top:40px;color:var(--muted);font-size:14.5px}
     <h1>Juicy Reset</h1>
     <p class="lede">A watermelon summer self-care box. Small batches, made by hand, ready to gift or keep.</p>
   </header>
- <form action="https://formspree.io/f/mppqnlek" method="POST">
+
   <section aria-labelledby="pick">
     <h2 id="pick">Pick your box</h2>
     <div id="tiers"></div>
   </section>
 
   <section aria-labelledby="you">
-         <h2 id="you">Your details</h2>
+    <h2 id="you">Your details</h2>
+    <form id="orderForm" novalidate>
     <label for="name">Your name</label>
     <input type="text" id="name" autocomplete="name">
+    <label for="email">Email address</label>
+    <input type="email" id="email" autocomplete="email" inputmode="email">
+    <input type="text" id="gotcha" name="_gotcha" tabindex="-1" autocomplete="off" aria-hidden="true" style="display:none">
     <label for="phone">Phone number</label>
     <input type="tel" id="phone" autocomplete="tel">
     <fieldset>
@@ -101,16 +106,15 @@ footer{margin-top:40px;color:var(--muted);font-size:14.5px}
     <textarea id="gift" placeholder="We'll write it on the card"></textarea>
 
     <div class="total" aria-live="polite"><span id="count">No boxes yet</span><strong id="total">R0</strong></div>
-    <a class="go" id="go" href="#">Send my order by email</a>
-    </form>
- 
+    <button type="submit" class="go" id="go">Place my pre-order</button>
     <p class="msg" id="msg" role="status"></p>
+    </form>
   </section>
 
   <section aria-labelledby="how">
     <h2 id="how">How it works</h2>
     <ol class="how">
-      <li>Choose your boxes and send the order. It opens in your email app, ready to send.</li>
+      <li>Choose your boxes, add your details and place your order.</li>
       <li>We confirm your order by email and send you a payment link. You pay online using that link.</li>
       <li>Your box is made after pre-orders close and arrives from <span id="deliv"></span>.</li>
     </ol>
@@ -122,7 +126,8 @@ footer{margin-top:40px;color:var(--muted);font-size:14.5px}
 // ---- Edit these before sharing ----
 const CONFIG = {
   brand: "EarthStyleSA",
-  email: "earthstylesaofficial@gmail.com",   // orders are sent to this address
+  endpoint: "https://formspree.io/f/mppqnlek",   // Formspree form that receives the orders
+  email: "earthstylesaofficial@gmail.com",   // shown to customers if sending fails
   closes: "20 November",
   deliveryFrom: "1 December",
   tiers: [
@@ -172,25 +177,51 @@ function update() {
   $("total").textContent = R(o.total);
   $("count").textContent = o.count ? o.count + (o.count === 1 ? " box" : " boxes") : "No boxes yet";
   $("addrWrap").style.display = method() === "delivery" ? "" : "none";
-  let msg = "Hi " + CONFIG.brand + "! I'd like to pre-order:\n" + o.lines.join("\n") + "\n\nTotal: " + R(o.total) +
-    "\n\nName: " + $("name").value.trim() + "\nPhone: " + $("phone").value.trim() + "\n" +
-    (method() === "delivery" ? "Delivery address: " + $("addr").value.trim() : "Collection");
-  if ($("gift").value.trim()) msg += "\nGift message: " + $("gift").value.trim();
-  $("go").href = "mailto:" + CONFIG.email + "?subject=" + encodeURIComponent("Pre-order from " + ($("name").value.trim() || "a customer")) + "&body=" + encodeURIComponent(msg);
 }
 
 function say(text, bad) { const m = $("msg"); m.textContent = text; m.className = "msg" + (bad ? " err" : ""); }
 
-$("go").addEventListener("click", e => {
-  update();
+$("orderForm").addEventListener("submit", async e => {
+  e.preventDefault();
   const o = order();
+  const name = $("name").value.trim(), email = $("email").value.trim(), phone = $("phone").value.trim();
+  const addr = $("addr").value.trim(), gift = $("gift").value.trim(), how = method();
   let problem = "";
   if (!o.count) problem = "Choose at least one box first.";
-  else if (!$("name").value.trim()) problem = "Add your name.";
-  else if (!$("phone").value.trim()) problem = "Add your phone number.";
-  else if (method() === "delivery" && !$("addr").value.trim()) problem = "Add your delivery address, or choose collection.";
-  if (problem) { e.preventDefault(); say(problem, true); return; }
-  say("Your email app should open with your order ready. Press send to finish. If nothing opens, email your order to " + CONFIG.email + ". We'll confirm it and email you a payment link.", false);
+  else if (!name) problem = "Add your name.";
+  else if (!/^\S+@\S+\.\S+$/.test(email)) problem = "Add a valid email address. We'll send your payment link there.";
+  else if (!phone) problem = "Add your phone number.";
+  else if (how === "delivery" && !addr) problem = "Add your delivery address, or choose collection.";
+  if (problem) { say(problem, true); return; }
+
+  const btn = $("go");
+  btn.disabled = true; btn.textContent = "Sending your order..."; say("", false);
+  const data = {
+    _subject: "New pre-order from " + name,
+    name: name, email: email, phone: phone,
+    order: o.lines.join("\n"),
+    total: R(o.total),
+    method: how === "delivery" ? "Delivery" : "Collection",
+    address: how === "delivery" ? addr : "",
+    gift_message: gift,
+    _gotcha: $("gotcha").value
+  };
+  try {
+    const res = await fetch(CONFIG.endpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Accept": "application/json" },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error("Request failed");
+    $("orderForm").reset();
+    CONFIG.tiers.forEach(t => qty[t.id] = 0);
+    update();
+    say("Thank you, " + name + "! Your order is in. We'll confirm it by email and send your payment link soon.", false);
+  } catch (err) {
+    say("Something went wrong sending your order. Please try again, or email it to " + CONFIG.email + ".", true);
+  }
+  btn.disabled = false; btn.textContent = "Place my pre-order";
+  $("msg").scrollIntoView({ block: "center" });
 });
 
 document.querySelectorAll("input, textarea").forEach(el => el.addEventListener("input", update));
